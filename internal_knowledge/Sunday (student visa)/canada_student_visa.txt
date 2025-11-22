@@ -1,0 +1,33 @@
+### Canada Student Visa
+1. https://www.canada.ca/en/immigration-refugees-citizenship/services/study-canada.html
+2. https://www.canada.ca/en/immigration-refugees-citizenship/services/study-canada/study-permit.html
+3. https://www.educanada.ca/study-plan-etudes/before-avant/permits-visas-permis.aspx?lang=eng
+4. https://www.mcgill.ca/internationalstudents/immigration-documents/documents/study-permit-application-guide
+5. https://internationalexperience.utoronto.ca/international-student-services/immigration/studying-in-canada/apply-for-your-study-permit
+
+---
+
+## Notes for RAG Integration:
+
+- All links are verified as of November 2025
+- Official government sources (marked with .gov, .gv, or official ministry URLs) are prioritized
+- University-specific pages provide detailed step-by-step guidance
+- EU Immigration Portal (home-affairs.ec.europa.eu) provides standardized information across all EU member states
+- Most sources contain scrapable structured information about:
+  * Eligibility requirements
+  * Required documentation
+  * Application procedures and timelines
+  * Fees and costs
+  * Processing times
+  * Rights and restrictions for student visa holders
+  * Renewal and extension procedures
+  * Family reunification options
+  * Post-study work opportunities
+
+## Recommended Scraping Strategy:
+
+1. **Official Government Sources**: Start with .gov and official ministry websites for most authoritative information
+2. **EU Immigration Portal**: Use for standardized EU comparisons and consistent data structure
+3. **University-Hosted Guides**: Supplement with institutional guidance for practical application details
+4. **Third-Party Aggregators**: Use for cross-verification of requirements and processing times
+5. **Reddit/Forum Communities**: Use sparingly for recent applicant experiences and timelines, but verify against official sources

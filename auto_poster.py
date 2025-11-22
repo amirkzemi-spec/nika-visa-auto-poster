@@ -1,122 +1,289 @@
-import json, random, requests, os, time, schedule
-from datetime import datetime
+import os
+import json
+import datetime
+import requests
+import re
 from openai import OpenAI
-from dotenv import load_dotenv   # ✅ NEW
+from dotenv import load_dotenv
 
-# ------------------------------
-# 🔐 Configuration
-# ------------------------------
-load_dotenv()  # ✅ Load .env file automatically
+# -------------------------------------------------
+# Load environment
+# -------------------------------------------------
+load_dotenv()
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-CHANNEL = "@nikavisa"  # or numeric ID if private
-POST_FILE = "internal_posts.json"
-LOG_FILE = "posted_log.json"
 
-# ✅ create client *after* loading environment
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# ------------------------------
-# 🧠 Utilities
-# ------------------------------
-def load_json(path):
+POSTS_FILE = "internal_posts.json"
+POSTING_PLAN_FILE = "posting_plan.json"
+POSTED_LOG_FILE = "posted_log.json"
+
+
+# -------------------------------------------------
+# JSON Helpers
+# -------------------------------------------------
+def load_json(path, default=None):
     if not os.path.exists(path):
-        return []
+        return default if default is not None else {}
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_json(data, path):
+
+def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
-def pick_unposted_item(posts, log):
-    unposted = [p for p in posts if p["source"] not in log]
-    return random.choice(unposted) if unposted else None
 
-def rephrase_and_tag(post):
-    try:
-        # 🎯 Choose one random footer for each post
-        footer_options = [
-            "📞 برای اطلاعات بیشتر با نیکا ویزا تماس بگیرید: 09910777743",
-            "🤖 اگر سوالی درباره مهاجرت دارید، از ربات هوش مصنوعی ما در @applypal_bot بپرسید",
-            "📅 برای رزرو وقت مشاوره، به ادمین پیام دهید: @nikavisa_admin"
-        ]
-        footer = random.choice(footer_options)
+# -------------------------------------------------
+# Telegram API
+# -------------------------------------------------
+def send_text_message(text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": CHANNEL_ID, "text": text, "parse_mode": "HTML"}
+    requests.post(url, json=payload)
 
-        prompt = f"""
-        متن زیر مربوط به تحصیل یا مهاجرت است. آن را به فارسی روان و جذاب خلاصه و بازنویسی کن.
-        در ابتدای پیام، یک تیتر کوتاه و توصیفی قرار بده که باید درون تگ HTML <b> </b> باشد (برای بولد شدن در تلگرام).
-        در انتهای پیام سه هشتگ مرتبط اضافه کن (به فارسی).
-        سپس جمله زیر را به عنوان امضای انتهایی اضافه کن:
-        {footer}
 
-        عنوان: {post['title']}
-        متن: {post['content']}
-        """
+def send_poll(question, options):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPoll"
+    payload = {
+        "chat_id": CHANNEL_ID,
+        "question": question,
+        "options": json.dumps(options),
+        "is_anonymous": True,
+    }
+    requests.post(url, data=payload)
 
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        text = resp.choices[0].message.content.strip()
 
-        # Ensure Telegram-safe HTML formatting
-        if not text.startswith("<b>"):
-            text = f"<b>{post['title']}</b>\n\n{text}"
-
+# -------------------------------------------------
+# Formatting helper (Markdown → Telegram HTML)
+# -------------------------------------------------
+def md_to_html(text):
+    if not text:
         return text
 
+    # **bold** → <b>bold</b>
+    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+
+    # Remove accidental markdown artifacts
+    text = text.replace("__", "")
+    text = text.replace("```", "")
+
+    return text.strip()
+
+# -------------------------------------------------
+# Category Rules
+# -------------------------------------------------
+def category_rules(category):
+    if category == "startup_visa":
+        return """
+Rewrite as a HIGH-VALUE startup visa guide.
+
+Rules:
+- Start with a <b>bold title</b>
+- Provide 4–7 SPECIFIC bullet points:
+    • Eligibility
+    • Minimum requirements
+    • Documents
+    • Processing time
+    • Benefits
+    • Who qualifies / who doesn’t
+- Write in direct, professional Persian
+- NO generic intros like “در این مطلب”
+- Add 2 relevant hashtags at the end
+"""
+
+    if category == "student_visa":
+        return """
+Rewrite as a clear student visa guide.
+
+Rules:
+- Start with a <b>bold title</b>
+- Provide 4–6 practical bullet points about:
+    • زبان، تمکن، مدارک
+    • زمان‌بندی اپلای
+    • شهریه و هزینه زندگی
+    • نکات مهم سفارت
+- No storytelling
+- No fluff
+- Add 2 student visa hashtags
+"""
+
+    if category == "scholarship":
+        return """
+Rewrite as a high-quality PhD scholarship guide.
+
+Rules:
+- Start with a <b>bold title</b>
+- Provide structured info:
+    • Funding amount / benefits
+    • Eligibility
+    • Supervisor requirement
+    • Deadlines
+    • Notes for Iranian applicants
+- Add 1–2 scholarship hashtags
+"""
+
+    if category == "immigration_update":
+        return """
+Rewrite as an immigration update.
+
+Rules:
+- Start with <b>bold title of the update</b>
+- Add:
+    • What changed
+    • Who is affected
+    • Why it matters
+    • What applicants should do next
+- Avoid generic intros
+- Add 1–2 relevant hashtags
+"""
+
+    if category == "work_permit":
+        return """
+Rewrite as a professional work permit / FIP visa guide.
+
+Rules:
+- Start with a <b>bold title</b>
+- Provide:
+    • Income requirements
+    • Job contract rules
+    • Timeline
+    • Legal notes
+    • Common mistakes
+- Add 1–2 hashtags
+"""
+
+    if category == "general":
+        return """
+Rewrite as a motivational post.
+
+Rules:
+- Start with a <b>bold insight</b>
+- Keep it SHORT and powerful
+- Add a single actionable takeaway
+- Add 1 motivational hashtag
+"""
+
+    return "Rewrite clearly and concisely."
+
+
+# -------------------------------------------------
+# GPT rewriting
+# -------------------------------------------------
+def rewrite_content(raw_text, category="general"):
+    rules = category_rules(category)
+
+    prompt = f"""
+{rules}
+
+TEXT:
+{raw_text}
+
+Rewrite now according to all rules.
+"""
+
+    try:
+        completion = client.responses.create(
+            model="gpt-4.1-mini",
+            input=prompt
+        )
+        return completion.output_text.strip()
+
     except Exception as e:
-        print(f"⚠️ GPT rephrase failed: {e}")
-        # 🔁 fallback with random footer
-        fallback_footer = random.choice([
-            "📞 برای اطلاعات بیشتر با نیکا ویزا تماس بگیرید: 09910777743",
-            "🤖 اگر سوالی درباره مهاجرت دارید، از ربات ما در @applypal_bot بپرسید",
-            "📅 برای رزرو وقت مشاوره به @nikavisa_admin پیام دهید"
-        ])
-        return f"<b>{post['title']}</b>\n\n{post['content']}\n\n{fallback_footer}"
+        print("Rewrite error:", e)
+        return raw_text
+
+# -------------------------------------------------
+# GPT rewriting
+# -------------------------------------------------
+
+# -------------------------------------------------
+# CTA (Add this right after rewrite_content)
+# -------------------------------------------------
+CTA_TEXT = (
+    "\n\n"
+    "برای دریافت مشاوره هوشمند و بررسی فوری شرایطت، "
+    "به وب‌سایت مشاور هوشمند نیکاوایزا مراجعه کن:\n"
+    "<a href=\"https://advisor.nikavisa.com\">advisor.nikavisa.com</a>"
+)
+
+# -------------------------------------------------
+# Select category of today
+# -------------------------------------------------
+def get_today_category():
+    plan = load_json(POSTING_PLAN_FILE, {})
+    today = datetime.datetime.now().strftime("%A")
+    return plan.get(today)
 
 
-def post_to_telegram(text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    params = {"chat_id": CHANNEL, "text": text, "parse_mode": "HTML"}
-    r = requests.get(url, params=params)
-    if r.status_code == 200:
-        print(f"✅ Posted successfully at {datetime.now()}")
-    else:
-        print(f"❌ Telegram error: {r.text}")
+# -------------------------------------------------
+# Select next unused content item
+# -------------------------------------------------
+def select_item(category):
+    posts = load_json(POSTS_FILE, default=[])
+    posted = load_json(POSTED_LOG_FILE, default=[])
 
-# ------------------------------
-# 🚀 Main Posting Logic
-# ------------------------------
-def post_one_item():
-    posts = load_json(POST_FILE)
-    log = load_json(LOG_FILE)
+    candidates = [
+        p for p in posts
+        if p["category"] == category and p["title"] not in posted
+    ]
 
-    post = pick_unposted_item(posts, log)
-    if not post:
-        print("⚠️ No new posts available.")
+    if not candidates:
+        return None
+
+    return candidates[0]
+
+
+# -------------------------------------------------
+# AUTO POSTING WORKFLOW
+# -------------------------------------------------
+def main():
+
+    # Debug
+    print("BOT:", BOT_TOKEN[:8] + "...")
+    print("CHANNEL:", CHANNEL_ID)
+    print("OpenAI:", OPENAI_API_KEY[:10] + "...")
+    today = datetime.datetime.now().strftime("%A")
+    print("Today:", today)
+
+    category = get_today_category()
+    print("Category:", category)
+
+    if category == "poll":
+        send_poll(
+            "کدام موضوع را دوست دارید بیشتر درباره‌اش پست بگذاریم؟",
+            ["ویزای تحصیلی", "ویزای کاری", "ویزای استارتاپی", "بورسیه‌ها"]
+        )
         return
 
-    text = rephrase_and_tag(post)
-    post_to_telegram(text)
-    log.append(post["source"])
-    save_json(log, LOG_FILE)
+    item = select_item(category)
 
-# ------------------------------
-# ⏰ Scheduler
-# ------------------------------
-def run_scheduler():
-    schedule.every().day.at("10:00").do(post_one_item)  # change time if needed
-    print("🕒 Auto-poster running... waiting for schedule.")
-    while True:
-        schedule.run_pending()
-        time.sleep(30)
+    if not item:
+        send_text_message(
+            f"<b>هیچ محتوایی برای {category} یافت نشد.</b>\n\n"
+            "لطفاً فایل‌های internal_knowledge را بروزرسانی کنید."
+        )
+        return
 
-# ------------------------------
-# 🏁 Entry point
-# ------------------------------
+    # Rewrite content
+    rewritten = rewrite_content(item["content"], category=item["category"])
+    final_text = md_to_html(rewritten.strip()) + CTA_TEXT
+
+    if not final_text.strip():
+        final_text = "<b>خطا در پردازش محتوا</b>"
+
+    send_text_message(final_text)
+
+    # Log item
+    posted = load_json(POSTED_LOG_FILE, default=[])
+    posted.append(item["title"])
+    save_json(POSTED_LOG_FILE, posted)
+
+    print("Posted:", item["title"])
+
+
 if __name__ == "__main__":
-    post_one_item()  # test now
-    # run_scheduler()  # uncomment for daily automation
+    main()
