@@ -27,3 +27,30 @@ sh: python: command not found
 ⏳ [2/3] Extracting content from all sources...
 ⏳ [3/3] Posting to Telegram...
 ✅ All done!
+USING KNOWLEDGE FOLDER: internal_knowledge
+Found 0 files in internal_knowledge/
+
+✅ Added 0 new posts.
+📦 Total posts stored: 193
+🌐 Fetching from https://www.schengenvisainfo.com/news/feed/
+🌐 Fetching from https://www.study.eu/rss
+🌐 Fetching from https://www.gov.uk/government/announcements.atom
+ℹ️ No new links found today.
+BOT: 82535313...
+CHANNEL: @nikavisa
+OpenAI: sk-proj-Sc...
+Today: Thursday
+Category: work_permits_investor_visas
+🚀 Starting daily Nika Visa AI content pipeline...
+
+
+🔧 Running: extract_internal_data.py
+✅ Finished: extract_internal_data.py
+
+🔧 Running: auto_fetch_links.py
+✅ Finished: auto_fetch_links.py
+
+🔧 Running: auto_poster.py
+✅ Finished: auto_poster.py
+
+🎉 All tasks completed for today.
